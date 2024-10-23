@@ -1,0 +1,18 @@
+# Ignore Node.js modules
+node_modules/
+
+# Ignore environment variable file
+.env
+
+# Other common ignores can be added here, e.g.:
+# Logs
+logs
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Build directories
+dist/
+build/
