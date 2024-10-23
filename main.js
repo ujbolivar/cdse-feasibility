@@ -148,14 +148,14 @@ require([
     return obj;
   }
 
-  function getTimeFromStacCatalog(itemId) {
-    let stacUrl = `https://catalogue.dataspace.copernicus.eu/stac/search?ids=${itemId}`;
+  // function getTimeFromStacCatalog(itemId) {
+  //   let stacUrl = `https://catalogue.dataspace.copernicus.eu/stac/search?ids=${itemId}`;
 
-    fetch(stacUrl).then((res) => {
-      let data = res.json();
-      console.log(data);
-    });
-  }
+  //   fetch(stacUrl).then((res) => {
+  //     let data = res.json();
+  //     console.log(data);
+  //   });
+  // }
 
   function getTime(url, wmtsLayerName) {
     let getCapabilitiesUrl = `${url}?SERVICE=WMTS&REQUEST=GetCapabilities`;
@@ -393,7 +393,7 @@ require([
 
   processMethodLayer(processedLayers, datasets);
   let currentLayers = Object.values(processedLayers).flat();
-  getTimeFromStacCatalog(wmtsLayerName);
+  // getTimeFromStacCatalog(wmtsLayerName);
 
   /// ____________________________________________________________ M A P  __________________________________________________________________
 
