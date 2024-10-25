@@ -17,6 +17,9 @@ module.exports = {
           loader: "babel-loader", // Use Babel for ES6+
           options: {
             presets: ["@babel/preset-env"],
+            plugins: [
+              "@babel/plugin-proposal-optional-chaining", // Add optional chaining plugin
+            ],
           },
         },
       },

@@ -115,6 +115,22 @@ loadModules([
         url: byocUrl,
       },
     };
+    const dataArray = [
+      {
+        bbox: [13, 45, 14, 46],
+        datetime: "2019-12-01T00:00:00Z/2020-01-01T00:00:00Z",
+        collections: ["sentinel-1-grd"],
+        limit: 100,
+        distinct: "date",
+      },
+      {
+        bbox: [13, 45, 14, 46],
+        datetime: "2019-12-01T00:00:00Z/2020-01-01T00:00:00Z",
+        collections: ["sentinel-1-grd"],
+        limit: 100,
+        distinct: "date",
+      },
+    ];
 
     /// __________________________________________________________ F U N C T I O N S _________________________________________________________
 
@@ -132,15 +148,11 @@ loadModules([
           body,
           config
         );
-        const accessToken = response.data.access_token;
-
+        const token = response.data.access_token;
         // Set the access token in the default headers for future requests
-        instance.defaults.headers["Authorization"] = `Bearer ${accessToken}`;
-        console.log("Access token received successfully.");
-
-        // Optionally return the token for use
-
-        //return accessToken;
+        instance.defaults.headers["Authorization"] = `Bearer ${token}`;
+        console.log("Access token received successfully.", token);
+        return token;
       } catch (error) {
         // Enhanced error handling
         const errorMessage = error.response
@@ -151,17 +163,42 @@ loadModules([
       }
     }
 
-    function getCatalogEntry(body) {
+    async function getCatalogEntry(body) {
       try {
-        instance.post(catalogUrl, body, config).then((response) => {
-          if (typeof response === "application/json") {
-            response.json();
+        if (!instance.defaults.headers.Authorization) {
+          console.log("no auth token available");
+          await requestAccessToken(); //AWAIT is crucial here
+        } else {
+          console.log("access token available, request has been skipped.");
+        }
+        const response = await instance.post(catalogUrl, body);
+        console.log("catalog API response: ", response.data);
+        return response.data;
+      } catch (error) {
+        console.error("Error fetching catalog entry: ", error);
+        throw error;
+      }
+    }
+
+    async function processCatalogEntries(...dataObjects) {
+      try {
+        const results = [];
+        for (const dataObject of dataObjects) {
+          try {
+            const result = await getCatalogEntry(dataObject);
+            results.push(result);
+          } catch (error) {
+            console.error(`Error processing data object:`, error);
+            // Optionally:  Handle the error more robustly (e.g., retry, skip, etc.)
+            results.push(null); // Or another indicator of failure
           }
-          console.log("Response from subsequent request:", response.data);
-        });
-        // Handle the response as needed
-      } catch (err) {
-        console.error(err.message);
+        }
+        console.table("Results:", results);
+      } catch (error) {
+        console.error(
+          "A critical error occurred during overall processing:",
+          error
+        );
       }
     }
 
@@ -203,15 +240,6 @@ loadModules([
       }
       return obj;
     }
-
-    // function getTimeFromStacCatalog(itemId) {
-    //   let stacUrl = `https://catalogue.dataspace.copernicus.eu/stac/search?ids=${itemId}`;
-
-    //   fetch(stacUrl).then((res) => {
-    //     let data = res.json();
-    //     console.log(data);
-    //   });
-    // }
 
     function getTime(url, wmtsLayerName) {
       let getCapabilitiesUrl = `${url}?SERVICE=WMTS&REQUEST=GetCapabilities`;
@@ -452,9 +480,9 @@ loadModules([
     /// __________________________________________________________ A U T H E N T I C A T I O N _______________________________________________
 
     // Invoke the function to request the token
-    requestAccessToken(cdseUrl).catch((err) => {
-      console.error(err.message);
-    });
+    //requestAccessToken(cdseUrl).catch((err) => {
+    //  console.error(err.message);
+    //});
 
     /// __________________________________________________________ L A Y E R S _______________________________________________________________
 
@@ -464,15 +492,8 @@ loadModules([
 
     /// ____________________________________________________________ Q U E R Y _______________________________________________________________
 
-    const data = {
-      bbox: [13, 45, 14, 46],
-      datetime: "2019-12-01T00:00:00Z/2020-01-01T00:00:00Z",
-      collections: ["sentinel-1-grd"],
-      limit: 100,
-      distinct: "date",
-    };
+    processCatalogEntries(...dataArray);
 
-    getCatalogEntry(data);
     /// ____________________________________________________________ M A P ___________________________________________________________________
 
     const map = new Map({

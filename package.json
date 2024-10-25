@@ -5,7 +5,9 @@
     "qs": "^6.13.0"
   },
   "devDependencies": {
+    "@babel/cli": "^7.25.9",
     "@babel/core": "^7.25.9",
+    "@babel/plugin-proposal-optional-chaining": "^7.21.0",
     "@babel/preset-env": "^7.25.9",
     "babel-loader": "^9.2.1",
     "dotenv-webpack": "^8.1.0",
