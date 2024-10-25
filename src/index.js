@@ -72,11 +72,9 @@ loadModules([
   ]) => {
     /// ________________________________________________________ V A R I A B L E S  __________________________________________________________
 
-    /* Change the STRING in the variable clmsSentinelInstanceID clmsByocInstanceID to ones created from your own CDSE account */
     /* DO NOT USE AN INSTANCE ID THAT IS NOT YOUR OWN */
     const client_id = process.env.CLIENT_ID;
     const client_secret = process.env.CLIENT_SECRET;
-    const cdseUrl = "https://sh.dataspace.copernicus.eu";
     // Create an Axios instance for the Copernicus Data Space API
     const instance = axios.create({
       baseURL: cdseUrl,
@@ -88,12 +86,11 @@ loadModules([
         "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
       },
     };
+    const cdseUrl = "https://sh.dataspace.copernicus.eu";
     const clmsSentinelInstanceID = process.env.CLMS_SENTINEL_INSTANCE_ID;
     const clmsByocInstanceID = process.env.CLMS_BYOC_INSTANCE_ID;
-    const ogcUrl = "https://sh.dataspace.copernicus.eu/ogc/";
-    const catalogUrl =
-      "https://sh.dataspace.copernicus.eu/api/v1/catalog/1.0.0/search";
-    //const stacUrl = "https://catalogue.dataspace.copernicus.eu/stac/collections";
+    const ogcUrl = `${cdseUrl}/ogc/`;
+    const catalogUrl = `${cdseUrl}/api/v1/catalog/1.0.0/search`;
     const wmsUrl = `${ogcUrl}wms/${clmsSentinelInstanceID}`;
     const wmtsUrl = `${ogcUrl}wmts/${clmsSentinelInstanceID}`;
     const byocUrl = `${ogcUrl}wms/${clmsByocInstanceID}`;
@@ -122,7 +119,7 @@ loadModules([
     /// __________________________________________________________ F U N C T I O N S _________________________________________________________
 
     // Function to request the access token
-    async function requestAccessToken(url) {
+    async function requestAccessToken() {
       const body = qs.stringify({
         client_id,
         client_secret,
@@ -131,7 +128,7 @@ loadModules([
 
       try {
         const response = await instance.post(
-          `${url}/auth/realms/CDSE/protocol/openid-connect/token`,
+          "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token",
           body,
           config
         );
@@ -156,18 +153,12 @@ loadModules([
 
     function getCatalogEntry(body) {
       try {
-        instance
-          .post(
-            "https://sh.dataspace.copernicus.eu/api/v1/catalog/1.0.0/search",
-            body,
-            config
-          )
-          .then((response) => {
-            if (typeof response === "application/json") {
-              response.json();
-            }
-            console.log("Response from subsequent request:", response.data);
-          });
+        instance.post(catalogUrl, body, config).then((response) => {
+          if (typeof response === "application/json") {
+            response.json();
+          }
+          console.log("Response from subsequent request:", response.data);
+        });
         // Handle the response as needed
       } catch (err) {
         console.error(err.message);
@@ -473,13 +464,15 @@ loadModules([
 
     /// ____________________________________________________________ Q U E R Y _______________________________________________________________
 
-    getCatalogEntry({
+    const data = {
       bbox: [13, 45, 14, 46],
       datetime: "2019-12-01T00:00:00Z/2020-01-01T00:00:00Z",
       collections: ["sentinel-1-grd"],
       limit: 100,
       distinct: "date",
-    });
+    };
+
+    getCatalogEntry(data);
     /// ____________________________________________________________ M A P ___________________________________________________________________
 
     const map = new Map({
