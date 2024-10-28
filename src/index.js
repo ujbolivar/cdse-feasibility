@@ -90,7 +90,7 @@ loadModules([
     const clmsSentinelInstanceID = process.env.CLMS_SENTINEL_INSTANCE_ID;
     const clmsByocInstanceID = process.env.CLMS_BYOC_INSTANCE_ID;
     const ogcUrl = `${cdseUrl}/ogc/`;
-    const catalogUrl = `${cdseUrl}/api/v1/catalog/1.0.0/search`;
+    const catalogUrl = `${cdseUrl}/api/v1/catalog/1.0.0`;
     const wmsUrl = `${ogcUrl}wms/${clmsSentinelInstanceID}`;
     const wmtsUrl = `${ogcUrl}wmts/${clmsSentinelInstanceID}`;
     const byocUrl = `${ogcUrl}wms/${clmsByocInstanceID}`;
@@ -115,22 +115,39 @@ loadModules([
         url: byocUrl,
       },
     };
-    const dataArray = [
-      {
-        bbox: [13, 45, 14, 46],
-        datetime: "2019-12-01T00:00:00Z/2020-01-01T00:00:00Z",
-        collections: ["sentinel-1-grd"],
-        limit: 100,
-        distinct: "date",
-      },
-      {
-        bbox: [13, 45, 14, 46],
-        datetime: "2019-12-01T00:00:00Z/2020-01-01T00:00:00Z",
-        collections: ["sentinel-1-grd"],
-        limit: 100,
-        distinct: "date",
-      },
-    ];
+
+    //Dcitionary to link data collection titles to their respective typenames
+
+    const typenames = new Map([
+      ["SENTINEL 2 L1C", "DSS1"],
+      ["SENTINEL 2 L2A", "DSS2"],
+      ["SENTINEL 1 IW", "DSS3"],
+      ["SENTINEL 1 EW", "DSS3"],
+      ["SENTINEL 1 EW SH", "DSS3"],
+      ["SENTINEL 3 OLCI", "DSS8"],
+      ["SENTINEL 3 L2", "DSS22"],
+      ["SENTINEL 3 SLSTR", "DSS9"],
+      ["SENTINEL 5P", "DSS7"],
+    ]);
+
+    //Example data array to cosult Copernicus Catalog API
+
+    // const dataArray = [
+    //   {
+    //     bbox: [13, 45, 14, 46],
+    //     datetime: "2019-12-01T00:00:00Z/2020-01-01T00:00:00Z",
+    //     collections: ["sentinel-1-grd"],
+    //     limit: 100,
+    //     distinct: "date",
+    //   },
+    //   {
+    //     bbox: [13, 45, 14, 46],
+    //     datetime: "2019-12-01T00:00:00Z/2020-01-01T00:00:00Z",
+    //     collections: ["sentinel-1-grd"],
+    //     limit: 100,
+    //     distinct: "date",
+    //   },
+    // ];
 
     /// __________________________________________________________ F U N C T I O N S _________________________________________________________
 
@@ -163,6 +180,30 @@ loadModules([
       }
     }
 
+    async function getCatalogCollections() {
+      const response = await instance.post(`${catalogUrl}/collections`);
+      let data = response.data;
+      let collections = data.collections.filter(
+        (collection) => collection.type.tolowerCase() === "collection"
+      );
+      //let collection = collections.filter(collection => collection.id === );
+      return collections;
+    }
+
+    function prepDataArray(collectionsArr) {
+      let dataArray = [];
+      collectionsArr.forEach((collection) => {
+        let dataObj = {
+          bbox: collection.extent.spatial.bbox,
+          datetime: `${collection.extent.temporal.interval[0]}/..`,
+          limit: 100,
+          distinct: "date",
+        };
+        dataArray.push(dataObj);
+      });
+      return dataArray;
+    }
+
     async function getCatalogEntry(body) {
       try {
         if (!instance.defaults.headers.Authorization) {
@@ -171,7 +212,7 @@ loadModules([
         } else {
           console.log("access token available, request has been skipped.");
         }
-        const response = await instance.post(catalogUrl, body);
+        const response = await instance.post(`${catalogUrl}/search`, body);
         console.log("catalog API response: ", response.data);
         return response.data;
       } catch (error) {
@@ -430,6 +471,9 @@ loadModules([
     }
 
     function processMethodLayer(layerObj, datasetObj) {
+      /*
+      let layerObj = {};
+      */
       let key;
       for (const i in datasetObj) {
         let url = datasetObj[i].url;
@@ -477,22 +521,21 @@ loadModules([
       return layerObj;
     }
 
-    /// __________________________________________________________ A U T H E N T I C A T I O N _______________________________________________
-
-    // Invoke the function to request the token
-    //requestAccessToken(cdseUrl).catch((err) => {
-    //  console.error(err.message);
-    //});
-
     /// __________________________________________________________ L A Y E R S _______________________________________________________________
 
     processMethodLayer(processedLayers, datasets);
     let currentLayers = Object.values(processedLayers).flat();
-    // getTimeFromStacCatalog(wmtsLayerName);
+    console.log("Current layers: ", currentLayers);
+    //let currentLayers = Object.values(processMethodLayer(processedLayers, datasets)).flat();
 
     /// ____________________________________________________________ Q U E R Y _______________________________________________________________
 
+    let collections = getCatalogCollections();
+    console.log("Collections: ", collections);
+    let dataArray = prepDataArray(collections);
     processCatalogEntries(...dataArray);
+
+    //processCatalogEntries(...collections);
 
     /// ____________________________________________________________ M A P ___________________________________________________________________
 
