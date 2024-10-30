@@ -180,28 +180,83 @@ loadModules([
       }
     }
 
+    function getCapabilities(url) {
+      const getCapabilitiesUrl = `${url}?REQUEST=GetCapabilities`;
+
+      return esriRequest(getCapabilitiesUrl, {
+        responseType: "xml",
+      }).then((response) => {
+        // Check if the response has a status property
+        if (
+          response.requestOptions &&
+          response.requestOptions.responseType === "xml"
+        ) {
+          const xmlData = response.data;
+
+          // Convert the XML to a string
+          const xmlString = new XMLSerializer().serializeToString(xmlData);
+
+          return xmlString;
+        } else {
+          throw new Error("Response is not XML");
+        }
+      });
+    }
+
+    function extractLayerData(json, key) {
+      let layers = json.WMS_Capabilities.Capability.Layer.Layer;
+
+      if (Array.isArray(layers)) {
+        return layers.map((l) => l[key]["#text"]);
+      } else {
+        return layers.Name["#text"];
+      }
+    }
+
+    async function prepDatasetObj(url) {
+      const capabilities = await getCapabilities(url)
+        .then((str) => new window.DOMParser().parseFromString(str, "text/xml"))
+        .then((data) => {
+          return xmlToJson(data);
+        });
+      console.log("Capabilities: ", capabilities);
+      const names = extractLayerData(capabilities, "Name");
+      console.log("layer names: ", names);
+      const titles = extractLayerData(capabilities, "Title");
+      console.log("layer titles: ", titles);
+      return {
+        url,
+        names,
+        titles,
+      };
+    }
+
     async function getCatalogCollections() {
-      const response = await instance.post(`${catalogUrl}/collections`);
+      const response = await instance.get(`${catalogUrl}/collections`);
       let data = response.data;
-      let collections = data.collections.filter(
-        (collection) => collection.type.tolowerCase() === "collection"
-      );
+      let collections = data.collections.filter((collection) => {
+        if (typeof collection.type === "string") {
+          const type = collection.type.toLowerCase();
+          return type === "collection";
+        }
+        return false;
+      });
+
+      //Match the collection ID to layer source value
+
       //let collection = collections.filter(collection => collection.id === );
+
       return collections;
     }
 
     function prepDataArray(collectionsArr) {
-      let dataArray = [];
-      collectionsArr.forEach((collection) => {
-        let dataObj = {
-          bbox: collection.extent.spatial.bbox,
-          datetime: `${collection.extent.temporal.interval[0]}/..`,
-          limit: 100,
-          distinct: "date",
-        };
-        dataArray.push(dataObj);
-      });
-      return dataArray;
+      return collectionsArr.map((collection) => ({
+        bbox: collection.extent.spatial.bbox[0],
+        datetime: `${collection.extent.temporal.interval[0][0]}/..`,
+        collections: [collection.id],
+        limit: 100,
+        distinct: "date",
+      }));
     }
 
     async function getCatalogEntry(body) {
@@ -470,15 +525,13 @@ loadModules([
       }
     }
 
-    function processMethodLayer(layerObj, datasetObj) {
-      /*
+    function processMethodLayer(obj) {
       let layerObj = {};
-      */
-      let key;
-      for (const i in datasetObj) {
-        let url = datasetObj[i].url;
-        let titles = datasetObj[i].titles;
+      let { url, names, titles } = obj;
 
+      let key;
+      for (let a = 0; a < 1; a++) {
+        // for (const i in names) {
         if (url.toLowerCase().includes("wms")) {
           key = "wms";
         } else if (url.toLowerCase().includes("wmts")) {
@@ -487,18 +540,19 @@ loadModules([
 
         switch (key) {
           case "wms":
-            layerObj[i] = new WMSLayer({
+            layerObj[a] = new WMSLayer({
               url: url,
-              sublayers: titles.map((title) => ({
-                name: title,
-                title: title,
+              sublayers: names.map((name, i) => ({
+                name: name,
+                title: titles[i],
+                visible: false,
               })),
               visible: false,
             });
             break;
           case "wmts":
-            titles.map((title) => {
-              layerObj[title] = new WMTSLayer({
+            names.map((name) => {
+              layerObj[name] = new WMTSLayer({
                 url: wmtsUrl,
                 style: "default",
                 format: "image/png",
@@ -506,7 +560,7 @@ loadModules([
                 tileMatrixSetID: "EPSG:4326",
                 visible: false,
                 activeLayer: {
-                  id: title,
+                  id: name,
                 },
                 customLayerParameters: {
                   SHOWLOGO: false,
@@ -521,89 +575,101 @@ loadModules([
       return layerObj;
     }
 
-    /// __________________________________________________________ L A Y E R S _______________________________________________________________
+    (async () => {
+      try {
+        /// __________________________________________________________ L A Y E R S _______________________________________________________________
 
-    processMethodLayer(processedLayers, datasets);
-    let currentLayers = Object.values(processedLayers).flat();
-    console.log("Current layers: ", currentLayers);
-    //let currentLayers = Object.values(processMethodLayer(processedLayers, datasets)).flat();
+        const layersData = await prepDatasetObj(wmsUrl);
+        //const layerNames = extractLayerdata(capabilities, "Name");
+        //const layerTitles = extractLayerdata(capabilities, "Title");
+        console.log("layers data object: ", layersData);
+        // const processedLayers = processMethodLayer(wmsUrl, layerNames, layerTitles);
+        // const currentLayers = Object.values(processedLayers).flat();
+        const processedLayers = processMethodLayer(layersData);
+        const currentLayers = Object.values(processedLayers).flat();
+        console.log("Current layers: ", currentLayers);
 
-    /// ____________________________________________________________ Q U E R Y _______________________________________________________________
+        /// ____________________________________________________________ Q U E R Y _______________________________________________________________
 
-    let collections = getCatalogCollections();
-    console.log("Collections: ", collections);
-    let dataArray = prepDataArray(collections);
-    processCatalogEntries(...dataArray);
+        // const collections = await getCatalogCollections();
+        // console.log("Collections: ", collections);
 
-    //processCatalogEntries(...collections);
+        // const dataArray = prepDataArray(collections);
+        // console.log("Data array: ", dataArray);
 
-    /// ____________________________________________________________ M A P ___________________________________________________________________
+        // await processCatalogEntries(...dataArray);
 
-    const map = new Map({
-      basemap: "topo-vector",
-    });
+        /// ____________________________________________________________ M A P ___________________________________________________________________
 
-    const view = new MapView({
-      container: "viewDiv",
-      map: map,
-      zoom: 10,
-      center: [-3.7038, 40.4168],
-    });
+        const map = new Map({
+          basemap: "topo-vector",
+        });
 
-    map.addMany(currentLayers);
+        const view = new MapView({
+          container: "viewDiv",
+          map: map,
+          zoom: 10,
+          center: [-3.7038, 40.4168],
+        });
 
-    /// ________________________________________________________ W I D G E T S _______________________________________________________________
+        map.addMany(currentLayers);
 
-    const layerList = new LayerList({
-      view: view,
-    });
+        /// ________________________________________________________ W I D G E T S _______________________________________________________________
 
-    view.ui.add(layerList, {
-      position: "top-left",
-    });
+        const layerList = new LayerList({
+          view: view,
+        });
 
-    const legend = new Legend({
-      view: view,
-    });
+        view.ui.add(layerList, {
+          position: "top-left",
+        });
 
-    const legendExpand = new Expand({
-      expandIconClass: "esri-icon-legend",
-      expandTooltip: "Legend",
-      view: view,
-      content: legend,
-      expanded: false,
-    });
+        const legend = new Legend({
+          view: view,
+        });
 
-    view.ui.add(legendExpand, "top-left");
+        const legendExpand = new Expand({
+          expandIconClass: "esri-icon-legend",
+          expandTooltip: "Legend",
+          view: view,
+          content: legend,
+          expanded: false,
+        });
 
-    //instantiate timeslider widget
+        view.ui.add(legendExpand, "top-left");
 
-    const timeSlider = new TimeSlider({
-      container: "timeSlider",
-      view: view,
-      timeVisible: true,
-      loop: true,
-      mode: "instant",
-    });
+        //instantiate timeslider widget
 
-    /// ___________________________________________________________ E V E N T S ______________________________________________________________
+        const timeSlider = new TimeSlider({
+          container: "timeSlider",
+          view: view,
+          timeVisible: true,
+          loop: true,
+          mode: "instant",
+        });
 
-    view.when(() => {
-      view.watch("updating", (isUpdating) => {
-        if (!isUpdating) {
-          const layerViews = view.layerViews;
-          if (layerViews && layerViews.length !== 0) {
-            layerViews.items.forEach((layer) => {
-              if (layer.visible && layer.visible === true) {
-                timeSlider.hidden = true;
-                configureTimeSlider(layer.layer);
-              } else {
-                timeSlider.hidden = false;
+        /// ___________________________________________________________ E V E N T S ______________________________________________________________
+
+        view.when(() => {
+          view.watch("updating", (isUpdating) => {
+            if (!isUpdating) {
+              const layerViews = view.layerViews;
+              if (layerViews && layerViews.length !== 0) {
+                layerViews.items.forEach((layer) => {
+                  if (layer.visible && layer.visible === true) {
+                    timeSlider.hidden = true;
+                    configureTimeSlider(layer.layer);
+                  } else {
+                    timeSlider.hidden = false;
+                  }
+                });
               }
-            });
-          }
-        }
-      });
-    }); //When view is updated we check for available layers in the view and run the time slider configurator again
+            }
+          });
+        }); //When view is updated we check for available layers in the view and run the time slider configurator again
+      } catch (error) {
+        console.error("An error occurred during the process:", error);
+      }
+    })();
   }
 );
