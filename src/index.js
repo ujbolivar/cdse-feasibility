@@ -101,21 +101,14 @@ loadModules([
     const byocTestLayerName = "TEST_LAYER";
     let focusedCollection;
     let collectionFeatures;
+    let collections;
+    let dataArray;
     let timeDict = {};
-    let processedLayers = {};
-    let datasets = {
-      wmsLayerName: {
-        titles: [wmsLayerName],
-        url: wmsUrl,
-      },
-      wmtsLayername: {
-        titles: [wmtsLayerName],
-        url: wmtsUrl,
-      },
-      byocTestLayerName: {
-        titles: [byocHRSILayerName, byocPsaLayerName, byocTestLayerName],
-        url: byocUrl,
-      },
+    //let processedLayers = {};
+    const byocLayers = {
+      names: [byocHRSILayerName, byocPsaLayerName, byocTestLayerName],
+      titles: [byocHRSILayerName, byocPsaLayerName, byocTestLayerName],
+      url: byocUrl,
     };
 
     //Dcitionary to link data collection titles to their respective typenames
@@ -446,6 +439,7 @@ loadModules([
 
     function configureTimeSlider(layer, collectionData, features) {
       const { type, url } = layer;
+      if (url.includes(clmsByocInstanceID)) return;
       const name = layer?.activeLayer?.id
         ? layer.activeLayer.id
         : layer?.allSublayers?.items[0]?.title
@@ -456,8 +450,6 @@ loadModules([
         timeSlider.stops = {
           interval: layer.timeInfo.interval,
         };
-      } else if (url.includes("byoc")) {
-        return;
       } else {
         timeSlider.fullTimeExtent = new TimeExtent({
           start: new Date(collectionData[0].extent.temporal.interval[0][0]),
@@ -600,30 +592,33 @@ loadModules([
 
     async function fetchLayersAndData() {
       try {
-        /// ____________________________________________________________ Q U E R Y _______________________________________________________________
+        // ____________________________________________________________ Q U E R Y _______________________________________________________________
 
-        const collections = await getCatalogCollections();
+        collections = await getCatalogCollections();
         console.log("Collections: ", collections);
 
         focusedCollection = findFocusedCollection(collections, wmsUrl);
         console.log("Focused collection: ", focusedCollection);
 
-        const dataArray = prepDataArray(focusedCollection);
+        dataArray = prepDataArray(focusedCollection);
         console.log("Data array: ", dataArray);
 
         collectionFeatures = await processCatalogEntries(...dataArray);
         console.log("Collection Features: ", collectionFeatures);
-        /// __________________________________________________________ L A Y E R S _______________________________________________________________
+
+        // __________________________________________________________ L A Y E R S _______________________________________________________________
 
         const layersData = await prepDatasetObj(wmsUrl);
-        //const layerNames = extractLayerdata(capabilities, "Name");
-        //const layerTitles = extractLayerdata(capabilities, "Title");
-        console.log("layers data object: ", layersData);
-        // const processedLayers = processMethodLayer(wmsUrl, layerNames, layerTitles);
-        // const currentLayers = Object.values(processedLayers).flat();
-        const processedLayers = processMethodLayer(layersData);
-        let currentLayers = Object.values(processedLayers).flat();
+        console.log("Layers data object: ", layersData);
+
+        // Process both layersData and byocLayers
+        const layersSet = [layersData, byocLayers];
+        const currentLayers = layersSet.reduce((acc, set) => {
+          const processedSet = processMethodLayer(set); // Process current set
+          return acc.concat(Object.values(processedSet)); // Flatten and add to accumulator
+        }, []);
         console.log("Current layers: ", currentLayers);
+
         return currentLayers;
       } catch (error) {
         console.error("An error occurred during the process:", error);
@@ -686,6 +681,7 @@ loadModules([
           const layerViews = view.layerViews;
           if (layerViews && layerViews.length !== 0) {
             layerViews.items.forEach((layer) => {
+              if (layer.layer.url.includes(clmsByocInstanceID)) return;
               if (layer.visible && layer.visible === true) {
                 timeSlider.hidden = true;
                 configureTimeSlider(
