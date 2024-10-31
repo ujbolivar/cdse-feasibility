@@ -99,6 +99,8 @@ loadModules([
     const byocHRSILayerName = "HRSI-RLIE-S1";
     const byocPsaLayerName = "PSA";
     const byocTestLayerName = "TEST_LAYER";
+    let focusedCollection;
+    let collectionFeatures;
     let timeDict = {};
     let processedLayers = {};
     let datasets = {
@@ -454,57 +456,25 @@ loadModules([
         timeSlider.stops = {
           interval: layer.timeInfo.interval,
         };
+      } else if (url.includes("byoc")) {
+        return;
       } else {
-        // getTime(url, name).then((v) => {
-        // Capabilities have time enabled
-        // if (v != false) {
-        // Start-End-Period
-        // if (v && typeof v === "object" && v.hasOwnProperty("period")) {
         timeSlider.fullTimeExtent = new TimeExtent({
           start: new Date(collectionData[0].extent.temporal.interval[0][0]),
           end: new Date(features[0].features[0]),
         });
         timeSlider.stops = {
           dates: features[0].features.map((e) => new Date(e)),
+
+          //   // Dates array
+          //   timeSlider.fullTimeExtent = new TimeExtent({
+          //     start: new Date(v.array[0]),
+          //     end: new Date(v.array[v.array.length - 1]),
+          //   });
+          //   timeSlider.stops = {
+          //     dates: v.array.map((e) => new Date(e)),
+          //   };
         };
-
-        //const period = parserPeriod(v.period);
-
-        // timeSlider.stops = {
-        //   interval: {
-        //     value:
-        //       period.years * 365 * 24 * 60 +
-        //       period.months * 31 * 24 * 60 +
-        //       period.weeks * 7 * 24 * 60 +
-        //       period.days * 24 * 60 +
-        //       period.hours * 60 +
-        //       period.minutes +
-        //       period.seconds / 60,
-        //     unit: "minutes",
-        //   },
-        // };
-        // } else if (
-        //   v &&
-        //   typeof v === "object" &&
-        //   v.hasOwnProperty("array")
-        // ) {
-        //   // Dates array
-        //   timeSlider.fullTimeExtent = new TimeExtent({
-        //     start: new Date(v.array[0]),
-        //     end: new Date(v.array[v.array.length - 1]),
-        //   });
-        //   timeSlider.stops = {
-        //     dates: v.array.map((e) => new Date(e)),
-        //   };
-        //   if (type === "wmts") {
-        //     layer.customParameters = {};
-        //     const time = v.array.map((d) => new Date(d));
-        //     for (i in time) {
-        //       timeDict[time[i]] = v.array[i];
-        //     }
-        //   }
-        // }
-
         timeSlider.watch("timeExtent", function () {
           layer.customParameters = {
             SHOWLOGO: false,
@@ -522,11 +492,6 @@ loadModules([
           ] = `${date}T00:00:00.000Z/${date}T23:59:59.999Z`;
           layer.refresh();
         });
-        // } // if there is dimension time
-        // else {
-        // console.log("No time dimension");
-        // }
-        // }); // GetTime
       }
     }
 
@@ -580,20 +545,73 @@ loadModules([
       return layerObj;
     }
 
-    (async () => {
+    // Function to show loading text with a spinner
+    function showLoadingText(message) {
+      // Create a loading div if it doesn't exist
+      let loadingDiv = document.getElementById("loadingDiv");
+      if (!loadingDiv) {
+        loadingDiv = document.createElement("div");
+        loadingDiv.id = "loadingDiv";
+        loadingDiv.style.position = "fixed";
+        loadingDiv.style.top = "50%";
+        loadingDiv.style.left = "50%";
+        loadingDiv.style.transform = "translate(-50%, -50%)";
+        loadingDiv.style.backgroundColor = "rgba(0, 0, 0, 0.7)";
+        loadingDiv.style.color = "white";
+        loadingDiv.style.padding = "20px";
+        loadingDiv.style.borderRadius = "5px";
+        loadingDiv.style.zIndex = "1000";
+
+        // Create spinner element
+        const spinner = document.createElement("div");
+        spinner.className = "spinner"; // Add spinner styles
+
+        // Append spinner and message to loadingDiv
+        loadingDiv.appendChild(spinner);
+        loadingDiv.appendChild(document.createTextNode(message));
+
+        document.body.appendChild(loadingDiv);
+      } else {
+        loadingDiv.innerText = message; // Update message if div already exists
+      }
+    }
+
+    // Function to hide loading text
+    function hideLoadingText() {
+      const loadingDiv = document.getElementById("loadingDiv");
+      if (loadingDiv) {
+        loadingDiv.remove();
+      }
+    }
+
+    // The main function that fetches layers and data
+    async function fetchAndDisplayLayers() {
+      showLoadingText("Loading layers, please wait..."); // Show loading text with spinner
+
+      try {
+        const currentLayers = await fetchLayersAndData(); // Await the promise
+        map.addMany(currentLayers); // Add layers to the map
+      } catch (error) {
+        console.error("Error fetching layers:", error);
+      } finally {
+        hideLoadingText(); // Hide loading text regardless of success or failure
+      }
+    }
+
+    async function fetchLayersAndData() {
       try {
         /// ____________________________________________________________ Q U E R Y _______________________________________________________________
 
         const collections = await getCatalogCollections();
         console.log("Collections: ", collections);
 
-        const focusedCollection = findFocusedCollection(collections, wmsUrl);
+        focusedCollection = findFocusedCollection(collections, wmsUrl);
         console.log("Focused collection: ", focusedCollection);
 
         const dataArray = prepDataArray(focusedCollection);
         console.log("Data array: ", dataArray);
 
-        const collectionFeatures = await processCatalogEntries(...dataArray);
+        collectionFeatures = await processCatalogEntries(...dataArray);
         console.log("Collection Features: ", collectionFeatures);
         /// __________________________________________________________ L A Y E R S _______________________________________________________________
 
@@ -604,84 +622,84 @@ loadModules([
         // const processedLayers = processMethodLayer(wmsUrl, layerNames, layerTitles);
         // const currentLayers = Object.values(processedLayers).flat();
         const processedLayers = processMethodLayer(layersData);
-        const currentLayers = Object.values(processedLayers).flat();
+        let currentLayers = Object.values(processedLayers).flat();
         console.log("Current layers: ", currentLayers);
-
-        /// ____________________________________________________________ M A P ___________________________________________________________________
-
-        const map = new Map({
-          basemap: "topo-vector",
-        });
-
-        const view = new MapView({
-          container: "viewDiv",
-          map: map,
-          zoom: 10,
-          center: [-3.7038, 40.4168],
-        });
-
-        map.addMany(currentLayers);
-
-        /// ________________________________________________________ W I D G E T S _______________________________________________________________
-
-        const layerList = new LayerList({
-          view: view,
-        });
-
-        view.ui.add(layerList, {
-          position: "top-left",
-        });
-
-        const legend = new Legend({
-          view: view,
-        });
-
-        const legendExpand = new Expand({
-          expandIconClass: "esri-icon-legend",
-          expandTooltip: "Legend",
-          view: view,
-          content: legend,
-          expanded: false,
-        });
-
-        view.ui.add(legendExpand, "top-left");
-
-        //instantiate timeslider widget
-
-        const timeSlider = new TimeSlider({
-          container: "timeSlider",
-          view: view,
-          timeVisible: true,
-          loop: true,
-          mode: "instant",
-        });
-
-        /// ___________________________________________________________ E V E N T S ______________________________________________________________
-
-        view.when(() => {
-          view.watch("updating", (isUpdating) => {
-            if (!isUpdating) {
-              const layerViews = view.layerViews;
-              if (layerViews && layerViews.length !== 0) {
-                layerViews.items.forEach((layer) => {
-                  if (layer.visible && layer.visible === true) {
-                    timeSlider.hidden = true;
-                    configureTimeSlider(
-                      layer.layer,
-                      focusedCollection,
-                      collectionFeatures
-                    );
-                  } else {
-                    timeSlider.hidden = false;
-                  }
-                });
-              }
-            }
-          });
-        }); //When view is updated we check for available layers in the view and run the time slider configurator again
+        return currentLayers;
       } catch (error) {
         console.error("An error occurred during the process:", error);
       }
-    })();
+    }
+    /// ____________________________________________________________ M A P ___________________________________________________________________
+
+    const map = new Map({
+      basemap: "topo-vector",
+    });
+
+    const view = new MapView({
+      container: "viewDiv",
+      map: map,
+      zoom: 10,
+      center: [-3.7038, 40.4168],
+    });
+
+    /// ________________________________________________________ W I D G E T S _______________________________________________________________
+
+    const layerList = new LayerList({
+      view: view,
+    });
+
+    view.ui.add(layerList, {
+      position: "top-left",
+    });
+
+    const legend = new Legend({
+      view: view,
+    });
+
+    const legendExpand = new Expand({
+      expandIconClass: "esri-icon-legend",
+      expandTooltip: "Legend",
+      view: view,
+      content: legend,
+      expanded: false,
+    });
+
+    view.ui.add(legendExpand, "top-left");
+
+    //instantiate timeslider widget
+
+    const timeSlider = new TimeSlider({
+      container: "timeSlider",
+      view: view,
+      timeVisible: true,
+      loop: true,
+      mode: "instant",
+    });
+
+    /// ___________________________________________________________ E V E N T S ______________________________________________________________
+
+    view.when(() => {
+      // fetchLayersAndData().then(map.addMany(currentLayers));
+      fetchAndDisplayLayers();
+      view.watch("updating", (isUpdating) => {
+        if (!isUpdating) {
+          const layerViews = view.layerViews;
+          if (layerViews && layerViews.length !== 0) {
+            layerViews.items.forEach((layer) => {
+              if (layer.visible && layer.visible === true) {
+                timeSlider.hidden = true;
+                configureTimeSlider(
+                  layer.layer,
+                  focusedCollection,
+                  collectionFeatures
+                );
+              } else {
+                timeSlider.hidden = false;
+              }
+            });
+          }
+        }
+      });
+    }); //When view is updated we check for available layers in the view and run the time slider configurator again
   }
 );
