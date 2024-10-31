@@ -72,15 +72,12 @@ loadModules([
   ]) => {
     /// ________________________________________________________ V A R I A B L E S  __________________________________________________________
 
-    /* DO NOT USE AN INSTANCE ID THAT IS NOT YOUR OWN */
     const client_id = process.env.CLIENT_ID;
     const client_secret = process.env.CLIENT_SECRET;
-    // Create an Axios instance for the Copernicus Data Space API
     const instance = axios.create({
       baseURL: cdseUrl,
     });
 
-    // Configure request headers
     const config = {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
@@ -104,49 +101,14 @@ loadModules([
     let collections;
     let dataArray;
     let timeDict = {};
-    //let processedLayers = {};
     const byocLayers = {
       names: [byocHRSILayerName, byocPsaLayerName, byocTestLayerName],
       titles: [byocHRSILayerName, byocPsaLayerName, byocTestLayerName],
       url: byocUrl,
     };
 
-    //Dcitionary to link data collection titles to their respective typenames
-
-    const typenames = new Map([
-      ["SENTINEL 2 L1C", "DSS1"],
-      ["SENTINEL 2 L2A", "DSS2"],
-      ["SENTINEL 1 IW", "DSS3"],
-      ["SENTINEL 1 EW", "DSS3"],
-      ["SENTINEL 1 EW SH", "DSS3"],
-      ["SENTINEL 3 OLCI", "DSS8"],
-      ["SENTINEL 3 L2", "DSS22"],
-      ["SENTINEL 3 SLSTR", "DSS9"],
-      ["SENTINEL 5P", "DSS7"],
-    ]);
-
-    //Example data array to cosult Copernicus Catalog API
-
-    // const dataArray = [
-    //   {
-    //     bbox: [13, 45, 14, 46],
-    //     datetime: "2019-12-01T00:00:00Z/2020-01-01T00:00:00Z",
-    //     collections: ["sentinel-1-grd"],
-    //     limit: 100,
-    //     distinct: "date",
-    //   },
-    //   {
-    //     bbox: [13, 45, 14, 46],
-    //     datetime: "2019-12-01T00:00:00Z/2020-01-01T00:00:00Z",
-    //     collections: ["sentinel-1-grd"],
-    //     limit: 100,
-    //     distinct: "date",
-    //   },
-    // ];
-
     /// __________________________________________________________ F U N C T I O N S _________________________________________________________
 
-    // Function to request the access token
     async function requestAccessToken() {
       const body = qs.stringify({
         client_id,
@@ -400,7 +362,7 @@ loadModules([
             }
           }
         });
-    } // getTime
+    }
 
     function parserTimeDimensionWMTileS(timeString) {
       // [ TO CHECK ] cambiar timeString por un nombre de variable mas entendible
@@ -417,7 +379,7 @@ loadModules([
         const datesArray = timeString.map((e) => e["#text"].replace(/\s/g, ""));
         return { array: datesArray };
       }
-    } // parserTimeDimensionWMTS
+    }
 
     function parserPeriod(iso8601Duration) {
       var iso8601DurationRegex =
@@ -435,7 +397,7 @@ loadModules([
         minutes: parseInt(matches[7] === undefined ? 0 : matches[7]),
         seconds: parseFloat(matches[8] === undefined ? 0 : matches[8]),
       };
-    } // parserPeriod
+    }
 
     function configureTimeSlider(layer, collectionData, features) {
       const { type, url } = layer;
@@ -457,15 +419,6 @@ loadModules([
         });
         timeSlider.stops = {
           dates: features[0].features.map((e) => new Date(e)),
-
-          //   // Dates array
-          //   timeSlider.fullTimeExtent = new TimeExtent({
-          //     start: new Date(v.array[0]),
-          //     end: new Date(v.array[v.array.length - 1]),
-          //   });
-          //   timeSlider.stops = {
-          //     dates: v.array.map((e) => new Date(e)),
-          //   };
         };
         timeSlider.watch("timeExtent", function () {
           layer.customParameters = {
@@ -537,7 +490,6 @@ loadModules([
       return layerObj;
     }
 
-    // Function to show loading text with a spinner
     function showLoadingText(message) {
       // Create a loading div if it doesn't exist
       let loadingDiv = document.getElementById("loadingDiv");
@@ -568,7 +520,6 @@ loadModules([
       }
     }
 
-    // Function to hide loading text
     function hideLoadingText() {
       const loadingDiv = document.getElementById("loadingDiv");
       if (loadingDiv) {
@@ -576,17 +527,16 @@ loadModules([
       }
     }
 
-    // The main function that fetches layers and data
     async function fetchAndDisplayLayers() {
-      showLoadingText("Loading layers, please wait..."); // Show loading text with spinner
+      showLoadingText("Loading layers, please wait...");
 
       try {
-        const currentLayers = await fetchLayersAndData(); // Await the promise
-        map.addMany(currentLayers); // Add layers to the map
+        const currentLayers = await fetchLayersAndData();
+        map.addMany(currentLayers);
       } catch (error) {
         console.error("Error fetching layers:", error);
       } finally {
-        hideLoadingText(); // Hide loading text regardless of success or failure
+        hideLoadingText();
       }
     }
 
@@ -611,11 +561,10 @@ loadModules([
         const layersData = await prepDatasetObj(wmsUrl);
         console.log("Layers data object: ", layersData);
 
-        // Process both layersData and byocLayers
         const layersSet = [layersData, byocLayers];
         const currentLayers = layersSet.reduce((acc, set) => {
-          const processedSet = processMethodLayer(set); // Process current set
-          return acc.concat(Object.values(processedSet)); // Flatten and add to accumulator
+          const processedSet = processMethodLayer(set);
+          return acc.concat(Object.values(processedSet));
         }, []);
         console.log("Current layers: ", currentLayers);
 
@@ -661,8 +610,6 @@ loadModules([
 
     view.ui.add(legendExpand, "top-left");
 
-    //instantiate timeslider widget
-
     const timeSlider = new TimeSlider({
       container: "timeSlider",
       view: view,
@@ -674,7 +621,6 @@ loadModules([
     /// ___________________________________________________________ E V E N T S ______________________________________________________________
 
     view.when(() => {
-      // fetchLayersAndData().then(map.addMany(currentLayers));
       fetchAndDisplayLayers();
       view.watch("updating", (isUpdating) => {
         if (!isUpdating) {
@@ -696,6 +642,6 @@ loadModules([
           }
         }
       });
-    }); //When view is updated we check for available layers in the view and run the time slider configurator again
+    });
   }
 );
