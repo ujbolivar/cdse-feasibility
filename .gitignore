@@ -16,3 +16,7 @@ Thumbs.db
 # Build directories
 dist/
 build/
+
+# Ignore backup bundle
+backup.bundle
+
