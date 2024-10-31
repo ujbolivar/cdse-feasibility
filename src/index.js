@@ -87,12 +87,12 @@ loadModules([
       },
     };
     const cdseUrl = "https://sh.dataspace.copernicus.eu";
-    const clmsSentinelInstanceID = process.env.CLMS_SENTINEL_INSTANCE_ID;
+    const fullWMSInstanceId = process.env.CLMS_SENTINEL_INSTANCE_ID;
     const clmsByocInstanceID = process.env.CLMS_BYOC_INSTANCE_ID;
     const ogcUrl = `${cdseUrl}/ogc/`;
     const catalogUrl = `${cdseUrl}/api/v1/catalog/1.0.0`;
-    const wmsUrl = `${ogcUrl}wms/${clmsSentinelInstanceID}`;
-    const wmtsUrl = `${ogcUrl}wmts/${clmsSentinelInstanceID}`;
+    const wmsUrl = `${ogcUrl}wms/${fullWMSInstanceId}`;
+    const wmtsUrl = `${ogcUrl}wmts/${fullWMSInstanceId}`;
     const byocUrl = `${ogcUrl}wms/${clmsByocInstanceID}`;
     const wmsLayerName = "AGRICULTURE";
     const wmtsLayerName = "FALSE_COLOR";
@@ -242,11 +242,17 @@ loadModules([
         return false;
       });
 
-      //Match the collection ID to layer source value
-
-      //let collection = collections.filter(collection => collection.id === );
-
       return collections;
+    }
+
+    function findFocusedCollection(collectionsArr, url) {
+      let focusCollection;
+      if (url.includes(fullWMSInstanceId)) {
+        focusCollection = "sentinel-2-l1c";
+      }
+      return collectionsArr.filter(
+        (collection) => collection.id === focusCollection
+      );
     }
 
     function prepDataArray(collectionsArr) {
@@ -290,6 +296,7 @@ loadModules([
           }
         }
         console.table("Results:", results);
+        return results;
       } catch (error) {
         console.error(
           "A critical error occurred during overall processing:",
@@ -435,93 +442,91 @@ loadModules([
       };
     } // parserPeriod
 
-    function configureTimeSlider(layer) {
+    function configureTimeSlider(layer, collectionData, features) {
       const { type, url } = layer;
       const name = layer?.activeLayer?.id
         ? layer.activeLayer.id
         : layer?.allSublayers?.items[0]?.title
         ? layer.allSublayers.items[0].title
         : null;
-      if (type === "wms") {
-        return;
-      } else if (type === "feature") {
+      if (type === "feature") {
         timeSlider.fullTimeExtent = layer.timeInfo.fullTimeExtent;
         timeSlider.stops = {
           interval: layer.timeInfo.interval,
         };
       } else {
-        getTime(url, name).then((v) => {
-          // Capabilities have time enabled
-          if (v != false) {
-            // Start-End-Period
-            if (v && typeof v === "object" && v.hasOwnProperty("period")) {
-              timeSlider.fullTimeExtent = new TimeExtent({
-                /*Here the start date is hardcoded, to set the start date available in the GetCapabilities response */
-                /* uncomment the following line and comment the hardcoded line */
-                //start: new Date(v.start),
-                start: "2024-01-01",
-                end: new Date(v.end),
-              });
+        // getTime(url, name).then((v) => {
+        // Capabilities have time enabled
+        // if (v != false) {
+        // Start-End-Period
+        // if (v && typeof v === "object" && v.hasOwnProperty("period")) {
+        timeSlider.fullTimeExtent = new TimeExtent({
+          start: new Date(collectionData[0].extent.temporal.interval[0][0]),
+          end: new Date(features[0].features[0]),
+        });
+        timeSlider.stops = {
+          dates: features[0].features.map((e) => new Date(e)),
+        };
 
-              const period = parserPeriod(v.period);
+        //const period = parserPeriod(v.period);
 
-              timeSlider.stops = {
-                interval: {
-                  value:
-                    period.years * 365 * 24 * 60 +
-                    period.months * 31 * 24 * 60 +
-                    period.weeks * 7 * 24 * 60 +
-                    period.days * 24 * 60 +
-                    period.hours * 60 +
-                    period.minutes +
-                    period.seconds / 60,
-                  unit: "minutes",
-                },
-              };
-            } else if (
-              v &&
-              typeof v === "object" &&
-              v.hasOwnProperty("array")
-            ) {
-              // Dates array
-              timeSlider.fullTimeExtent = new TimeExtent({
-                start: new Date(v.array[0]),
-                end: new Date(v.array[v.array.length - 1]),
-              });
-              timeSlider.stops = {
-                dates: v.array.map((e) => new Date(e)),
-              };
-              if (type === "wmts") {
-                layer.customParameters = {};
-                const time = v.array.map((d) => new Date(d));
-                for (i in time) {
-                  timeDict[time[i]] = v.array[i];
-                }
-              }
-            }
+        // timeSlider.stops = {
+        //   interval: {
+        //     value:
+        //       period.years * 365 * 24 * 60 +
+        //       period.months * 31 * 24 * 60 +
+        //       period.weeks * 7 * 24 * 60 +
+        //       period.days * 24 * 60 +
+        //       period.hours * 60 +
+        //       period.minutes +
+        //       period.seconds / 60,
+        //     unit: "minutes",
+        //   },
+        // };
+        // } else if (
+        //   v &&
+        //   typeof v === "object" &&
+        //   v.hasOwnProperty("array")
+        // ) {
+        //   // Dates array
+        //   timeSlider.fullTimeExtent = new TimeExtent({
+        //     start: new Date(v.array[0]),
+        //     end: new Date(v.array[v.array.length - 1]),
+        //   });
+        //   timeSlider.stops = {
+        //     dates: v.array.map((e) => new Date(e)),
+        //   };
+        //   if (type === "wmts") {
+        //     layer.customParameters = {};
+        //     const time = v.array.map((d) => new Date(d));
+        //     for (i in time) {
+        //       timeDict[time[i]] = v.array[i];
+        //     }
+        //   }
+        // }
 
-            timeSlider.watch("timeExtent", function () {
-              layer.customParameters = {
-                SHOWLOGO: false,
-              };
-              let date;
-              if (timeSlider.timeExtent.start) {
-                date = timeSlider.timeExtent.start;
-                let year = date.getFullYear();
-                let month = String(date.getMonth() + 1).padStart(2, "0");
-                let day = String(date.getDate()).padStart(2, "0");
-                date = `${year}-${month}-${day}`;
-              }
-              layer.customParameters[
-                "TIME"
-              ] = `${date}T00:00:00.000Z/${date}T23:59:59.999Z`;
-              layer.refresh();
-            });
-          } // if there is dimension time
-          else {
-            console.log("No time dimension");
+        timeSlider.watch("timeExtent", function () {
+          layer.customParameters = {
+            SHOWLOGO: false,
+          };
+          let date;
+          if (timeSlider.timeExtent.start) {
+            date = timeSlider.timeExtent.start;
+            let year = date.getFullYear();
+            let month = String(date.getMonth() + 1).padStart(2, "0");
+            let day = String(date.getDate()).padStart(2, "0");
+            date = `${year}-${month}-${day}`;
           }
-        }); // GetTime
+          layer.customParameters[
+            "TIME"
+          ] = `${date}T00:00:00.000Z/${date}T23:59:59.999Z`;
+          layer.refresh();
+        });
+        // } // if there is dimension time
+        // else {
+        // console.log("No time dimension");
+        // }
+        // }); // GetTime
       }
     }
 
@@ -547,7 +552,7 @@ loadModules([
                 title: titles[i],
                 visible: false,
               })),
-              visible: false,
+              visible: true,
             });
             break;
           case "wmts":
@@ -577,6 +582,19 @@ loadModules([
 
     (async () => {
       try {
+        /// ____________________________________________________________ Q U E R Y _______________________________________________________________
+
+        const collections = await getCatalogCollections();
+        console.log("Collections: ", collections);
+
+        const focusedCollection = findFocusedCollection(collections, wmsUrl);
+        console.log("Focused collection: ", focusedCollection);
+
+        const dataArray = prepDataArray(focusedCollection);
+        console.log("Data array: ", dataArray);
+
+        const collectionFeatures = await processCatalogEntries(...dataArray);
+        console.log("Collection Features: ", collectionFeatures);
         /// __________________________________________________________ L A Y E R S _______________________________________________________________
 
         const layersData = await prepDatasetObj(wmsUrl);
@@ -588,16 +606,6 @@ loadModules([
         const processedLayers = processMethodLayer(layersData);
         const currentLayers = Object.values(processedLayers).flat();
         console.log("Current layers: ", currentLayers);
-
-        /// ____________________________________________________________ Q U E R Y _______________________________________________________________
-
-        // const collections = await getCatalogCollections();
-        // console.log("Collections: ", collections);
-
-        // const dataArray = prepDataArray(collections);
-        // console.log("Data array: ", dataArray);
-
-        // await processCatalogEntries(...dataArray);
 
         /// ____________________________________________________________ M A P ___________________________________________________________________
 
@@ -658,7 +666,11 @@ loadModules([
                 layerViews.items.forEach((layer) => {
                   if (layer.visible && layer.visible === true) {
                     timeSlider.hidden = true;
-                    configureTimeSlider(layer.layer);
+                    configureTimeSlider(
+                      layer.layer,
+                      focusedCollection,
+                      collectionFeatures
+                    );
                   } else {
                     timeSlider.hidden = false;
                   }
