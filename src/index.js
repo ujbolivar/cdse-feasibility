@@ -84,28 +84,38 @@ loadModules([
       },
     };
     const cdseUrl = "https://sh.dataspace.copernicus.eu";
-    const fullWMSInstanceId = process.env.CLMS_SENTINEL_INSTANCE_ID;
-    const clmsByocInstanceID = process.env.CLMS_BYOC_INSTANCE_ID;
+
+    // const fullWMSInstanceId = process.env.CLMS_SENTINEL_INSTANCE_ID;
+    // const clmsByocInstanceID = process.env.CLMS_BYOC_INSTANCE_ID;
+    const clmsSoilInstanceID = process.env.CLMS_SOIL_INSTANCE_ID;
+
     const ogcUrl = `${cdseUrl}/ogc/`;
     const catalogUrl = `${cdseUrl}/api/v1/catalog/1.0.0`;
-    const wmsUrl = `${ogcUrl}wms/${fullWMSInstanceId}`;
-    const wmtsUrl = `${ogcUrl}wmts/${fullWMSInstanceId}`;
-    const byocUrl = `${ogcUrl}wms/${clmsByocInstanceID}`;
-    const wmsLayerName = "AGRICULTURE";
-    const wmtsLayerName = "FALSE_COLOR";
-    const byocHRSILayerName = "HRSI-RLIE-S1";
-    const byocPsaLayerName = "PSA";
-    const byocTestLayerName = "TEST_LAYER";
+
+    // const wmsUrl = `${ogcUrl}wms/${fullWMSInstanceId}`;
+    // const wmtsUrl = `${ogcUrl}wmts/${fullWMSInstanceId}`;
+    // const byocUrl = `${ogcUrl}wms/${clmsByocInstanceID}`;
+    const soilUrl = `${ogcUrl}wms/${clmsSoilInstanceID}`;
+    // const wmsLayerName = "AGRICULTURE";
+    // const wmtsLayerName = "FALSE_COLOR";
+    // const byocHRSILayerName = "HRSI-RLIE-S1";
+    // const byocPsaLayerName = "PSA";
+    // const byocTestLayerName = "TEST_LAYER";
+    const soilWaterIndexName = "SOIL-WATER-INDEX-SWI_EUROPE_1KM_DAILY-SWI-";
+    const soilWaterIndexLayerIdArray = ["SWI010", "SWI015", "SWI020", "SWI040", "SWI060", "SWI100", "SSF", "SWI002", "SWI005", ];
+    const soilMoistureName = "SURFACE-SOIL-MOISTURE-SSM_EUROPE_1KM_DAILY-SURFACE-SOIL-MOISTURE-SWI-SSF"
     let focusedCollection;
     let collectionFeatures;
     let collections;
     let dataArray;
     let timeDict = {};
     const byocLayers = {
-      names: [byocHRSILayerName, byocPsaLayerName, byocTestLayerName],
-      titles: [byocHRSILayerName, byocPsaLayerName, byocTestLayerName],
-      url: byocUrl,
+      names: soilWaterIndexLayerIdArray.map(indexedDB => `${soilWaterIndexName}${indexedDB}`),
+      titles: soilWaterIndexLayerIdArray.map(indexedDB => `${soilWaterIndexName}${indexedDB}`),
+      url: soilUrl,
     };
+    byocLayers.names.push(soilMoistureName);
+    byocLayers.titles.push(soilMoistureName);
 
     /// __________________________________________________________ F U N C T I O N S _________________________________________________________
 
@@ -115,7 +125,6 @@ loadModules([
         client_secret,
         grant_type: "client_credentials",
       });
-
       try {
         const response = await instance.post(
           "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token",
@@ -125,7 +134,6 @@ loadModules([
         const token = response.data.access_token;
         // Set the access token in the default headers for future requests
         instance.defaults.headers["Authorization"] = `Bearer ${token}`;
-        console.log("Access token received successfully.", token);
         return token;
       } catch (error) {
         // Enhanced error handling
@@ -139,7 +147,6 @@ loadModules([
 
     function getCapabilities(url) {
       const getCapabilitiesUrl = `${url}?REQUEST=GetCapabilities`;
-
       return esriRequest(getCapabilitiesUrl, {
         responseType: "xml",
       }).then((response) => {
@@ -176,11 +183,8 @@ loadModules([
         .then((data) => {
           return xmlToJson(data);
         });
-      console.log("Capabilities: ", capabilities);
       const names = extractLayerData(capabilities, "Name");
-      console.log("layer names: ", names);
       const titles = extractLayerData(capabilities, "Title");
-      console.log("layer titles: ", titles);
       return {
         url,
         names,
@@ -204,8 +208,9 @@ loadModules([
 
     function findFocusedCollection(collectionsArr, url) {
       let focusCollection;
-      if (url.includes(fullWMSInstanceId)) {
-        focusCollection = "sentinel-2-l1c";
+      if (url.includes(clmsSoilInstanceID)) {
+        // focusCollection = "sentinel-2-l1c";
+        focusCollection = "byoc-bd02588b-7236-4b1e-9480-aeae7dce3c7a";
       }
       return collectionsArr.filter(
         (collection) => collection.id === focusCollection
@@ -225,13 +230,10 @@ loadModules([
     async function getCatalogEntry(body) {
       try {
         if (!instance.defaults.headers.Authorization) {
-          console.log("no auth token available");
           await requestAccessToken(); //AWAIT is crucial here
         } else {
-          console.log("access token available, request has been skipped.");
         }
         const response = await instance.post(`${catalogUrl}/search`, body);
-        console.log("catalog API response: ", response.data);
         return response.data;
       } catch (error) {
         console.error("Error fetching catalog entry: ", error);
@@ -263,12 +265,9 @@ loadModules([
     }
 
     function xmlToJson(xml) {
-      // Create the return object
       var obj = {};
 
       if (xml.nodeType == 1) {
-        // element
-        // do attributes
         if (xml.attributes.length > 0) {
           obj["@attributes"] = {};
           for (var j = 0; j < xml.attributes.length; j++) {
@@ -277,11 +276,9 @@ loadModules([
           }
         }
       } else if (xml.nodeType == 3) {
-        // text
         obj = xml.nodeValue;
       }
 
-      // do children
       if (xml.hasChildNodes()) {
         for (var i = 0; i < xml.childNodes.length; i++) {
           var item = xml.childNodes.item(i);
@@ -303,7 +300,6 @@ loadModules([
 
     function getTime(url, wmtsLayerName) {
       let getCapabilitiesUrl = `${url}?SERVICE=WMTS&REQUEST=GetCapabilities`;
-
       return esriRequest(getCapabilitiesUrl, {
         responseType: "xml",
       })
@@ -317,7 +313,6 @@ loadModules([
 
             // Convert the XML to a string
             const xmlString = new XMLSerializer().serializeToString(xmlData);
-
             return xmlString;
           } else {
             throw new Error("Response is not XML");
@@ -326,7 +321,6 @@ loadModules([
         .then((str) => new window.DOMParser().parseFromString(str, "text/xml"))
         .then((data) => {
           let cap = xmlToJson(data);
-
           let layers = cap.Capabilities.Contents.Layer;
           let layer = {};
 
@@ -384,7 +378,6 @@ loadModules([
     function parserPeriod(iso8601Duration) {
       var iso8601DurationRegex =
         /(-)?P(?:([.,\d]+)Y)?(?:([.,\d]+)M)?(?:([.,\d]+)W)?(?:([.,\d]+)D)?T?(?:([.,\d]+)H)?(?:([.,\d]+)M)?(?:([.,\d]+)S)?/;
-
       var matches = iso8601Duration.match(iso8601DurationRegex);
 
       return {
@@ -443,7 +436,6 @@ loadModules([
     function processMethodLayer(obj) {
       let layerObj = {};
       let { url, names, titles } = obj;
-
       let key;
       for (let a = 0; a < 1; a++) {
         // for (const i in names) {
@@ -452,7 +444,8 @@ loadModules([
         } else if (url.toLowerCase().includes("wmts")) {
           key = "wmts";
         }
-
+        console.log("THE URL CREATED FOR THE REQUEST: ", url);
+        
         switch (key) {
           case "wms":
             layerObj[a] = new WMSLayer({
@@ -545,26 +538,21 @@ loadModules([
         // ____________________________________________________________ Q U E R Y _______________________________________________________________
 
         collections = await getCatalogCollections();
-        console.log("Collections: ", collections);
+        console.log("collections returned: ",   collections);
+        focusedCollection = findFocusedCollection(collections, soilUrl);
 
-        focusedCollection = findFocusedCollection(collections, wmsUrl);
-        console.log("Focused collection: ", focusedCollection);
+         dataArray = prepDataArray(focusedCollection);
 
-        dataArray = prepDataArray(focusedCollection);
-        console.log("Data array: ", dataArray);
-
-        collectionFeatures = await processCatalogEntries(...dataArray);
-        console.log("Collection Features: ", collectionFeatures);
+         collectionFeatures = await processCatalogEntries(...dataArray);
 
         // __________________________________________________________ L A Y E R S _______________________________________________________________
-
-        const layersData = await prepDatasetObj(wmsUrl);
+        console.log("Focused collection: ", focusedCollection);
+        const layersData = await prepDatasetObj(soilUrl);
         console.log("Layers data object: ", layersData);
 
-        const layersSet = [layersData, byocLayers];
-        const currentLayers = layersSet.reduce((acc, set) => {
-          const processedSet = processMethodLayer(set);
-          return acc.concat(Object.values(processedSet));
+        // Only process the dynamic WMS data, not the hardcoded byocLayers
+        const currentLayers = [processMethodLayer(layersData)].reduce((acc, set) => {
+          return acc.concat(Object.values(set));
         }, []);
         console.log("Current layers: ", currentLayers);
 
@@ -625,16 +613,16 @@ loadModules([
       view.watch("updating", (isUpdating) => {
         if (!isUpdating) {
           const layerViews = view.layerViews;
+          
           if (layerViews && layerViews.length !== 0) {
             layerViews.items.forEach((layer) => {
-              if (layer.layer.url.includes(clmsByocInstanceID)) return;
               if (layer.visible && layer.visible === true) {
                 timeSlider.hidden = true;
-                configureTimeSlider(
-                  layer.layer,
-                  focusedCollection,
-                  collectionFeatures
-                );
+                // configureTimeSlider(
+                //   layer.layer,
+                //   focusedCollection,
+                //   collectionFeatures
+                // );
               } else {
                 timeSlider.hidden = false;
               }
