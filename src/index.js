@@ -74,6 +74,7 @@ loadModules([
 
     const client_id = process.env.CLIENT_ID;
     const client_secret = process.env.CLIENT_SECRET;
+    const cdseUrl = "https://sh.dataspace.copernicus.eu";
     const instance = axios.create({
       baseURL: cdseUrl,
     });
@@ -83,19 +84,18 @@ loadModules([
         "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
       },
     };
-    const cdseUrl = "https://sh.dataspace.copernicus.eu";
 
     // const fullWMSInstanceId = process.env.CLMS_SENTINEL_INSTANCE_ID;
     // const clmsByocInstanceID = process.env.CLMS_BYOC_INSTANCE_ID;
     const clmsSoilInstanceID = process.env.CLMS_SOIL_INSTANCE_ID;
-
+    const clmsByocCollectionID = process.env.CLMS_BYOC_COLLECTION_ID;
     const ogcUrl = `${cdseUrl}/ogc/`;
     const catalogUrl = `${cdseUrl}/api/v1/catalog/1.0.0`;
 
     // const wmsUrl = `${ogcUrl}wms/${fullWMSInstanceId}`;
     // const wmtsUrl = `${ogcUrl}wmts/${fullWMSInstanceId}`;
     // const byocUrl = `${ogcUrl}wms/${clmsByocInstanceID}`;
-    const soilUrl = `${ogcUrl}wms/${clmsSoilInstanceID}`;
+    const soilUrl = `${ogcUrl}wmts/${clmsSoilInstanceID}`;
     // const wmsLayerName = "AGRICULTURE";
     // const wmtsLayerName = "FALSE_COLOR";
     // const byocHRSILayerName = "HRSI-RLIE-S1";
@@ -109,6 +109,7 @@ loadModules([
     let collections;
     let dataArray;
     let timeDict = {};
+  let distinctDates;
     const byocLayers = {
       names: soilWaterIndexLayerIdArray.map(indexedDB => `${soilWaterIndexName}${indexedDB}`),
       titles: soilWaterIndexLayerIdArray.map(indexedDB => `${soilWaterIndexName}${indexedDB}`),
@@ -134,6 +135,7 @@ loadModules([
         const token = response.data.access_token;
         // Set the access token in the default headers for future requests
         instance.defaults.headers["Authorization"] = `Bearer ${token}`;
+        console.log("token: ",token);
         return token;
       } catch (error) {
         // Enhanced error handling
@@ -146,7 +148,8 @@ loadModules([
     }
 
     function getCapabilities(url) {
-      const getCapabilitiesUrl = `${url}?REQUEST=GetCapabilities`;
+      const isWMTS = url.toLowerCase().includes('/wmts/');
+      const getCapabilitiesUrl = isWMTS ? `${url}?SERVICE=WMTS&REQUEST=GetCapabilities` : `${url}?REQUEST=GetCapabilities`;
       return esriRequest(getCapabilitiesUrl, {
         responseType: "xml",
       }).then((response) => {
@@ -168,12 +171,28 @@ loadModules([
     }
 
     function extractLayerData(json, key) {
-      let layers = json.WMS_Capabilities.Capability.Layer.Layer;
-
-      if (Array.isArray(layers)) {
-        return layers.map((l) => l[key]["#text"]);
+      if (json && json.WMS_Capabilities && json.WMS_Capabilities.Capability && json.WMS_Capabilities.Capability.Layer) {
+        let layers = json.WMS_Capabilities.Capability.Layer.Layer;
+        if (Array.isArray(layers)) {
+          return layers.map((l) => l[key]["#text"]);
+        } else {
+          return layers.Name["#text"];
+        }
+      } else if (json && json.Capabilities && json.Capabilities.Contents && json.Capabilities.Contents.Layer) {
+        let layers = json.Capabilities.Contents.Layer;
+        if (Array.isArray(layers)) {
+          return layers.map((l) => {
+            if (key === "Name") return l["ows:Identifier"]["#text"];
+            if (key === "Title") return l["ows:Title"]["#text"];
+            return null;
+          });
+        } else {
+          if (key === "Name") return [layers["ows:Identifier"]["#text"]];
+          if (key === "Title") return [layers["ows:Title"]["#text"]];
+          return [];
+        }
       } else {
-        return layers.Name["#text"];
+        return [];
       }
     }
 
@@ -195,22 +214,14 @@ loadModules([
     async function getCatalogCollections() {
       const response = await instance.get(`${catalogUrl}/collections`);
       let data = response.data;
-      let collections = data.collections.filter((collection) => {
-        if (typeof collection.type === "string") {
-          const type = collection.type.toLowerCase();
-          return type === "collection";
-        }
-        return false;
-      });
-
-      return collections;
+      return data.collections;
     }
 
     function findFocusedCollection(collectionsArr, url) {
       let focusCollection;
       if (url.includes(clmsSoilInstanceID)) {
         // focusCollection = "sentinel-2-l1c";
-        focusCollection = "byoc-bd02588b-7236-4b1e-9480-aeae7dce3c7a";
+        focusCollection = `byoc-${clmsByocCollectionID}`;
       }
       return collectionsArr.filter(
         (collection) => collection.id === focusCollection
@@ -394,7 +405,7 @@ loadModules([
 
     function configureTimeSlider(layer, collectionData, features) {
       const { type, url } = layer;
-      if (url.includes(clmsByocInstanceID)) return;
+      if (url.includes(clmsSoilInstanceID)) return;
       const name = layer?.activeLayer?.id
         ? layer.activeLayer.id
         : layer?.allSublayers?.items[0]?.title
@@ -461,7 +472,7 @@ loadModules([
           case "wmts":
             names.map((name) => {
               layerObj[name] = new WMTSLayer({
-                url: wmtsUrl,
+                url: soilUrl,
                 style: "default",
                 format: "image/png",
                 tileMatrixSet: "EPSG:4326",
@@ -526,6 +537,7 @@ loadModules([
       try {
         const currentLayers = await fetchLayersAndData();
         map.addMany(currentLayers);
+        if (distinctDates && distinctDates.length) setTimeSlider(distinctDates);
       } catch (error) {
         console.error("Error fetching layers:", error);
       } finally {
@@ -539,11 +551,26 @@ loadModules([
 
         collections = await getCatalogCollections();
         console.log("collections returned: ",   collections);
-        focusedCollection = findFocusedCollection(collections, soilUrl);
+        const exampleSearchBody = {
+          collections: [`byoc-${clmsByocCollectionID}`],
+          datetime: "2005-07-12T00:00:00Z/2025-08-12T23:59:59Z",
+          bbox: [12.44693,41.870072,12.541001,41.917096],
+          limit: 10
+        };
+        const exampleSearchResult = await getCatalogEntry(exampleSearchBody);
+        console.log("Example search result: ", exampleSearchResult);
+        focusedCollection = [`byoc-${clmsByocCollectionID}`]; // Direct BYOC ID usage
 
-         dataArray = prepDataArray(focusedCollection);
+        dataArray = [{
+          collections: focusedCollection,
+          bbox: [12.44693,41.870072,12.541001,41.917096],
+          datetime: "2005-07-12T00:00:00Z/2025-08-12T23:59:59Z",
+          limit: 100,
+          distinct: "date"
+        }];
 
-         collectionFeatures = await processCatalogEntries(...dataArray);
+        collectionFeatures = await processCatalogEntries(...dataArray);
+  distinctDates = await fetchAllDistinctDates(dataArray[0]);
 
         // __________________________________________________________ L A Y E R S _______________________________________________________________
         console.log("Focused collection: ", focusedCollection);
@@ -618,11 +645,11 @@ loadModules([
             layerViews.items.forEach((layer) => {
               if (layer.visible && layer.visible === true) {
                 timeSlider.hidden = true;
-                // configureTimeSlider(
-                //   layer.layer,
-                //   focusedCollection,
-                //   collectionFeatures
-                // );
+                configureTimeSlider(
+                  layer.layer,
+                  focusedCollection,
+                  collectionFeatures
+                );
               } else {
                 timeSlider.hidden = false;
               }
@@ -631,5 +658,30 @@ loadModules([
         }
       });
     });
+
+    async function fetchAllDistinctDates(baseBody) {
+      let body = Object.assign({}, baseBody);
+      let dates = [];
+      let guard = 0;
+      while (true) {
+        const r = await getCatalogEntry(body);
+        if (Array.isArray(r.features)) dates = dates.concat(r.features);
+        if (!r.context || r.context.next == null) break;
+        body.next = r.context.next;
+        guard++;
+        if (guard > 50) break;
+      }
+      return dates;
+    }
+
+    function setTimeSlider(dateStrings) {
+      if (!dateStrings.length) return;
+      const sorted = dateStrings.slice().sort();
+      const start = new Date(sorted[0]);
+      const end = new Date(sorted[sorted.length - 1]);
+      timeSlider.fullTimeExtent = new TimeExtent({ start, end });
+      timeSlider.stops = { dates: sorted.map(d => new Date(d)) };
+      timeSlider.timeExtent = new TimeExtent({ start: end, end: end });
+    }
   }
 );
