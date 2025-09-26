@@ -405,43 +405,28 @@ loadModules([
 
     function configureTimeSlider(layer, collectionData, features) {
       const { type, url } = layer;
-      if (url.includes(clmsSoilInstanceID)) return;
       const name = layer?.activeLayer?.id
         ? layer.activeLayer.id
         : layer?.allSublayers?.items[0]?.title
         ? layer.allSublayers.items[0].title
         : null;
-      if (type === "feature") {
-        timeSlider.fullTimeExtent = layer.timeInfo.fullTimeExtent;
-        timeSlider.stops = {
-          interval: layer.timeInfo.interval,
-        };
-      } else {
-        timeSlider.fullTimeExtent = new TimeExtent({
-          start: new Date(collectionData[0].extent.temporal.interval[0][0]),
-          end: new Date(features[0].features[0]),
-        });
-        timeSlider.stops = {
-          dates: features[0].features.map((e) => new Date(e)),
-        };
-        timeSlider.watch("timeExtent", function () {
-          layer.customParameters = {
-            SHOWLOGO: false,
-          };
-          let date;
-          if (timeSlider.timeExtent.start) {
-            date = timeSlider.timeExtent.start;
-            let year = date.getFullYear();
-            let month = String(date.getMonth() + 1).padStart(2, "0");
-            let day = String(date.getDate()).padStart(2, "0");
-            date = `${year}-${month}-${day}`;
-          }
-          layer.customParameters[
-            "TIME"
-          ] = `${date}T00:00:00.000Z/${date}T23:59:59.999Z`;
-          layer.refresh();
-        });
+      function applyTimeToLayer(d) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        const dateStr = `${y}-${m}-${day}`;
+        const timeValue = `${dateStr}T00:00:00.000Z/${dateStr}T23:59:59.999Z`;
+        layer.customLayerParameters = Object.assign({}, layer.customLayerParameters, { SHOWLOGO: false, TIME: timeValue });
+        layer.refresh();
       }
+      if (timeSlider.timeExtent && timeSlider.timeExtent.start) {
+        applyTimeToLayer(timeSlider.timeExtent.start);
+      }
+      timeSlider.watch("timeExtent", function () {
+        if (timeSlider.timeExtent && timeSlider.timeExtent.start) {
+          applyTimeToLayer(timeSlider.timeExtent.start);
+        }
+      });
     }
 
     function processMethodLayer(obj) {
@@ -449,14 +434,12 @@ loadModules([
       let { url, names, titles } = obj;
       let key;
       for (let a = 0; a < 1; a++) {
-        // for (const i in names) {
         if (url.toLowerCase().includes("wms")) {
           key = "wms";
         } else if (url.toLowerCase().includes("wmts")) {
           key = "wmts";
         }
         console.log("THE URL CREATED FOR THE REQUEST: ", url);
-        
         switch (key) {
           case "wms":
             layerObj[a] = new WMSLayer({
